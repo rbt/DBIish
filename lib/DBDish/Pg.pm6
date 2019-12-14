@@ -66,6 +66,10 @@ our sub pg-replace-placeholder(Str $query) is export {
 }
 
 
+our sub pg-decode-record(Str $string) is export {
+
+}
+
 #------------------ methods to be called from DBIish ------------------
 
 method connect(:database(:$dbname), *%params) {
