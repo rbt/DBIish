@@ -16,7 +16,7 @@ has $.in_transaction is rw = False;
 has %.Converter is DBDish::TypeConverter;
 has %.dynamic-types = %oid-to-type;
 
-submethod BUILD(:$!pg_conn!, :$!parent!, :$!AutoCommit) {
+submethod BUILD(:$!pg_conn!, :$!parent!, :$!AutoCommit, Code :$!dispose-callback) {
     %!Converter =
        method (--> Bool) { self eq 't' },
        method (--> DateTime) { DateTime.new(self.split(' ').join('T')) },
@@ -149,6 +149,23 @@ method pg-consume-input(--> Bool) {
 method _disconnect() {
     .PQfinish with $!pg_conn;
     $!pg_conn = Nil;
+}
+
+# Rollback any in-progress transaction and discard all state
+method scrub-state-for-reuse() {
+    # Silence the warning for a ROLLBACK without a transaction in progress. It's there to ensure
+    # the DISCARD is successful. Since the user called dispose() without committing first they won't
+    # mind if we rollback.
+    my $trans-result = $!pg_conn.PQexec(q{SET client_min_messages = 'ERROR'; ROLLBACK;});
+    $.in_transaction = False;
+
+    # An error during DISCARD ALL is considered fatal to prevent leaking the environment to
+    # other sections of the code. Let the pooler figure out this issue on it's own.
+    my $result = $!pg_conn.PQexec(q{DISCARD ALL});
+    unless $result && $result.is-ok {
+        self._disconnect;
+        self!set-err($result.PQresultStatus, $result.PQresultErrorMessage);
+    }
 }
 
 constant %pg-to-sql is export = Map.new: map(

@@ -24,14 +24,24 @@ has $.last-rows is rw;
 
 # Treated as a boolean
 has atomicint $!connection-lock = 0;
+has $.dispose-callback;
 
 method dispose() {
     $!statements-lock.protect: {
         $_.dispose for %!statements.values;
         %!statements = ();
     }
-    self._disconnect;
-    ?($.parent.unregister-connection(self))
+
+    # The callback may suppress disconnection from the database.
+    my Bool $want-disconnect = True;
+    if $.dispose-callback.defined {
+        $want-disconnect = ($.dispose-callback)(self);
+    }
+
+    if ($want-disconnect) {
+        self._disconnect;
+        ?($.parent.unregister-connection(self))
+    }
 }
 submethod DESTROY() {
     self.dispose;
